@@ -17,8 +17,6 @@ use Image::Hash;
 use Digest::MD5;
 use Image::ExifTool 'ImageInfo';
 
-use Data::Dumper;
-
 # global
 
 my $dbh;
@@ -56,8 +54,6 @@ sub image_info {
   return unless $exif->{FileType};
 
   delete $exif->{ThumbnailImage}; # binary data I don't need
-
-  #print "$file : " . Dumper $exif;
 
   my $image = read_file($file, binmode => ':raw' ) ;
 
@@ -109,18 +105,7 @@ sub image_info {
   };
 }
 
-sub db {
-  state $dbh;
-
-  unless ( $dbh ) {
-    $dbh = DBI->connect("DBI:SQLite:dbname=".$config->{db}, "", "", {RaiseError => 1}) or die $DBI::errstr;
-    print Dumper $dbh;
-  }
-
-  return $dbh;
-}
-
-sub filter {
+sub analyze {
   my $file = $_;
   my $dir  = $File::Find::dir;
   my $src  = $File::Find::name;
@@ -218,8 +203,6 @@ sub organize {
 
 # main
 
-# sudo port install gd2;sudo port install libvpx
-
 GetOptions (
   "config=s"  => \$opt_config,
   "verbose"     => \$opt_verbose,
@@ -230,7 +213,7 @@ GetOptions (
 &load_cfg($opt_config) if $opt_config;
 
 $dbh = DBI->connect("dbi:SQLite:dbname=$config->{db}", "", "", {RaiseError => 1}) or die $DBI::errstr;
-if ($opt_analyze)  { find( \&filter, @{$config->{dirs}{src}} ); }
+if ($opt_analyze)  { find( \&analyze, @{$config->{dirs}{src}} ); }
 if ($opt_organize) { organize();  }
 
 unless ($opt_analyze || $opt_organize) { say "Nothing to do ..."; } else { say "All done!"; }
