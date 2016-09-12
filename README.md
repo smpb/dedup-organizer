@@ -14,7 +14,7 @@ Simple image file deduplication (and organizer) tool, through MD5 and Perceptual
 
 ## How-to
 
-  1. `sqlite3 photos.db < "schema.sql"`
+  1. `perl dedup-organizer.pl --setup`
   2. `perl dedup-organizer.pl --analize  [--verbose]`
   3. `perl dedup-organizer.pl --organize [--verbose]`
 

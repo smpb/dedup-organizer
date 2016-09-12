@@ -19,11 +19,13 @@ use Image::ExifTool 'ImageInfo';
 
 # global
 
-my $dbh;
-my $opt_verbose;
+my $opt_setup;
 my $opt_config;
+my $opt_verbose;
 my $opt_analyze;
 my $opt_organize;
+
+my $dbh;
 my $config = {
   db   => 'photos.db',
   dirs => {
@@ -44,6 +46,14 @@ sub load_cfg {
   my $loaded_cfg = eval $contents;
   foreach my $key (keys %{$loaded_cfg}) {
     $config->{$key} = $loaded_cfg->{$key};
+  }
+}
+
+sub setup_db {
+  say "Setting up database file ...";
+  while (my $sql = <DATA>) {
+    print $sql if $opt_verbose;
+    $dbh->do($sql);
   }
 }
 
@@ -167,8 +177,6 @@ sub organize {
       say "Organizing stored information ...";
 
       while(my $photo = $sth->fetchrow_hashref()) {
-        #print Dumper $photo;
-
         my $key = $photo->{hash};
         say "Using key '$key' to identify the item '$photo->{source}'." if $opt_verbose;
 
@@ -204,20 +212,25 @@ sub organize {
 # main
 
 GetOptions (
+  "setup"     => \$opt_setup,
   "config=s"  => \$opt_config,
-  "verbose"     => \$opt_verbose,
+  "verbose"   => \$opt_verbose,
   "analyze"   => \$opt_analyze,
   "organize"  => \$opt_organize
 );
 
-&load_cfg($opt_config) if $opt_config;
+load_cfg($opt_config) if $opt_config;
 
 $dbh = DBI->connect("dbi:SQLite:dbname=$config->{db}", "", "", {RaiseError => 1}) or die $DBI::errstr;
+
+if ($opt_setup)    { setup_db(); }
 if ($opt_analyze)  { find( \&analyze, @{$config->{dirs}{src}} ); }
-if ($opt_organize) { organize();  }
+if ($opt_organize) { organize(); }
 
-unless ($opt_analyze || $opt_organize) { say "Nothing to do ..."; } else { say "All done!"; }
+unless ($opt_setup || $opt_analyze || $opt_organize) { say "Nothing to do ..."; } else { say "All done!"; }
 
-
-
-
+__DATA__
+DROP TABLE IF EXISTS photos;
+CREATE TABLE photos (id INTEGER PRIMARY KEY AUTOINCREMENT, md5 VARCHAR(50), hash VARCHAR(50), exif BLOB, date BLOB, camera VARCHAR(50), source VARCHAR(255), destination VARCHAR(255));
+CREATE INDEX IDX_MD5  ON photos (md5);
+CREATE INDEX IDX_HASH ON photos (hash);
