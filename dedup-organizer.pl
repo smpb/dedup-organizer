@@ -65,19 +65,21 @@ sub image_info {
 
   delete $exif->{ThumbnailImage}; # binary data I don't need
 
-  my $image = read_file($file, binmode => ':raw' ) ;
+  my $image = read_file($file, binmode => ':raw' );
 
   # file hash
   my $md5 = Digest::MD5->new->add($image)->hexdigest;
 
   # image hash
   my $hash = '';
-  if (lc $exif->{FileType} ne 'mov') {
-    my $iHash = Image::Hash->new($image);
-    $hash = $iHash->phash();
-  } else {
-    $hash = $md5;
+  if ($exif->{MIMEType} =~ /image/i) {
+    eval {
+      my $iHash = Image::Hash->new($image);
+      $hash = $iHash->phash();
+    }; say "ERROR: $@" if $@;
   }
+
+  $hash = $md5 unless $hash;
 
   # date the image
   my $date;
@@ -202,6 +204,17 @@ sub organize {
         for my $photo (values %$photos) {
           my $src = $photo->{source};
           my $dst = join('/', ($config->{dirs}{dst}, $photo->{destination}));
+          if (-e $dst) {
+            my $count = 0;
+            my $new_dst = $dst;
+
+            do {
+              my($filename, $dirs, $suffix) = fileparse( $dst, qr/\.[^.]*/ );
+              $count++; $new_dst = $dirs . $filename . "_$count" . $suffix;
+            } while (-e $new_dst);
+
+            $dst = $new_dst;
+          }
           say "Creating a copy of '$src' in '$dst'";
           fcopy($src, $dst);
         }
