@@ -12,6 +12,7 @@ use File::Slurp;
 use File::Basename;
 use File::Copy::Recursive 'fcopy';
 use Getopt::Long;
+use List::Util 'max';
 
 use Image::Hash;
 use Digest::MD5;
@@ -100,20 +101,48 @@ sub image_info {
   }
 
   # camera used
-  my $camera = '';
+  $exif->{Camera} = '';
   if ($exif->{Make} || $exif->{Model}) {
-    $camera = "$exif->{Make} $exif->{Model}";
-    $camera =~ s/^\s//g;
-    $camera =~ s/\s$//g;
-    $camera =~ s/\s/-/g;
+    $exif->{Camera} = "$exif->{Make} $exif->{Model}";
+    $exif->{Camera} =~ s/^\s//g;
+    $exif->{Camera} =~ s/\s$//g;
+    $exif->{Camera} =~ s/\s/-/g;
+  }
+
+  # custom rendering options for iPhone:
+  #  4 : original image
+  #  3 : HDR image
+  #  6 : panorama image
+  if (($exif->{Camera} =~ /Apple/i) && ($exif->{CustomRendered} =~ /(\d+)/)) {
+    my $render_v = $1;
+    $exif->{HDR}      = 1 if ($render_v == 3);
+    $exif->{Panorama} = 1 if ($render_v == 6);
+  }
+
+  # panorama double check
+  my $min_pano_ratio = 16 / 9;
+  if (($exif->{ImageWidth}) && ($exif->{ImageHeight})) {
+    my $ratio = max(
+      ($exif->{ImageWidth}  / $exif->{ImageHeight}),
+      ($exif->{ImageHeight} / $exif->{ImageWidth}),
+    );
+    $exif->{Panorama} = 1 if ($ratio > $min_pano_ratio);
+  }
+
+  # custom fields (subject to change...)
+  if ($exif->{Software} && $exif->{Software} =~ /instagram/i) {
+    $exif->{Instagram} = 1;
+  }
+  if (($exif->{FileName}    && $exif->{FileName}    =~ /screen\s*shot/i) ||
+      ($exif->{UserComment} && $exif->{UserComment} =~ /screen\s*shot/i)) {
+    $exif->{Screenshot} = 1;
   }
 
   return {
-    exif   => $exif,
-    hash   => $hash,
-    md5    => $md5,
-    date   => $date,
-    camera => $camera,
+    exif => $exif,
+    hash => $hash,
+    md5  => $md5,
+    date => $date,
   };
 }
 
@@ -136,10 +165,14 @@ sub analyze {
   if ($info) {
     my($filename, $dirs, $suffix) = fileparse( $file, qr/\.[^.]*/ );
 
-    my $name   .= join('-', ($info->{date}{year}, $info->{date}{mon}, $info->{date}{day})) . '_';
-    $name      .= join('.', ($info->{date}{hour}, $info->{date}{min}, $info->{date}{sec}));
-    $name      .= $info->{camera} ? '_' . $info->{camera} : '';
-    $name      .= $suffix;
+    my $name .= join('-', ($info->{date}{year}, $info->{date}{mon}, $info->{date}{day})) . '_';
+    $name    .= join('.', ($info->{date}{hour}, $info->{date}{min}, $info->{date}{sec}));
+    $name    .= $info->{exif}{HDR}        ? '_HDR'        : '';
+    $name    .= $info->{exif}{Panorama}   ? '_Panorama'   : '';
+    $name    .= $info->{exif}{Instagram}  ? '_Instagram'  : '';
+    $name    .= $info->{exif}{Screenshot} ? '_Screenshot' : '';
+    $name    .= $info->{exif}{Camera}     ? '_' . $info->{exif}{Camera} : '';
+    $name    .= $suffix;
 
     my $dst = join('/',
       ($info->{date}{year}, $info->{date}{mon}, $info->{date}{day}, $name)
@@ -151,17 +184,16 @@ sub analyze {
     if ($opt_verbose) {
       say "Storing : MD5 '$info->{md5}' | HASH '$info->{hash}' | EXIF '". length($data_exif)  ."' | '$src' -> '$dst'";
     } else {
-      say "Storing info about '$src'...";
+      say "Storing info about '$src' ...";
     }
 
-    my $stmt = "INSERT INTO photos (md5, hash, exif, date, camera, source, destination) VALUES (?,?,?,?,?,?,?)";
+    my $stmt = "INSERT INTO photos (md5, hash, exif, date, source, destination) VALUES (?,?,?,?,?,?)";
     my $sth  = $dbh->prepare($stmt);
     my $res  = $sth->execute(
       $info->{md5},
       $info->{hash},
       $data_exif,
       $data_date,
-      $info->{camera},
       $src,
       $dst,
     );
@@ -185,7 +217,7 @@ sub organize {
         my $use_it = 1;
         if (exists $photos->{$key}) {
           if ($photos->{$key}{md5} eq $photo->{md5}) {
-            say "Found an exact duplicate, ignoring it..." if $opt_verbose;
+            say "Found an exact duplicate, ignoring it ..." if $opt_verbose;
             $use_it = 0;
           } else {
             $use_it = length($photo->{exif}) > length($photos->{$key}{exif});
@@ -215,8 +247,8 @@ sub organize {
 
             $dst = $new_dst;
           }
-          say "Creating a copy of '$src' in '$dst'";
           fcopy($src, $dst);
+          say "Created a copy of '$src' in '$dst'";
         }
       }
     }
@@ -244,6 +276,6 @@ unless ($opt_setup || $opt_analyze || $opt_organize) { say "Nothing to do ..."; 
 
 __DATA__
 DROP TABLE IF EXISTS photos;
-CREATE TABLE photos (id INTEGER PRIMARY KEY AUTOINCREMENT, md5 VARCHAR(50), hash VARCHAR(50), exif BLOB, date BLOB, camera VARCHAR(50), source VARCHAR(255), destination VARCHAR(255));
+CREATE TABLE photos (id INTEGER PRIMARY KEY AUTOINCREMENT, md5 VARCHAR(50), hash VARCHAR(50), exif BLOB, date BLOB, source VARCHAR(255), destination VARCHAR(255));
 CREATE INDEX IDX_MD5  ON photos (md5);
 CREATE INDEX IDX_HASH ON photos (hash);
