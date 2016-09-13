@@ -113,7 +113,7 @@ sub image_info {
   #  4 : original image
   #  3 : HDR image
   #  6 : panorama image
-  if (($exif->{Camera} =~ /Apple/i) && ($exif->{CustomRendered} =~ /(\d+)/)) {
+  if (($exif->{Camera} =~ /Apple/i) && $exif->{CustomRendered} && ($exif->{CustomRendered} =~ /(\d+)/)) {
     my $render_v = $1;
     $exif->{HDR}      = 1 if ($render_v == 3);
     $exif->{Panorama} = 1 if ($render_v == 6);
