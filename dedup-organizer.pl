@@ -192,13 +192,7 @@ sub analyze {
     my $data_exif = nfreeze($info->{exif});
     my $data_date = nfreeze($info->{date});
 
-    if ($opt_verbose) {
-      say "Storing : MD5 '$info->{md5}' | HASH '$info->{hash}' | EXIF '". length($data_exif)  ."' | '$src' -> '$dst'";
-    } else {
-      say "Storing info about '$src' ...";
-    }
-
-    my $stmt = "INSERT INTO photos (md5, hash, exif, date, source, destination) VALUES (?,?,?,?,?,?)";
+    my $stmt = "INSERT OR REPLACE INTO photos (md5, hash, exif, date, source, destination) VALUES (?,?,?,?,?,?)";
     my $sth  = $dbh->prepare($stmt);
     my $res  = $sth->execute(
       $info->{md5},
@@ -208,6 +202,16 @@ sub analyze {
       $src,
       $dst,
     );
+
+    if ( $res ) {
+      if ($opt_verbose) {
+        say "Stored : MD5 '$info->{md5}' | HASH '$info->{hash}' | EXIF '". length($data_exif)  ."' | '$src' -> '$dst'";
+      } else {
+        say "Stored info about '$src' ...";
+      }
+    } else {
+      say "ERROR: Unable to store info about '$src'; $DBI::errstr"
+    }
   }
 
 }
@@ -227,21 +231,21 @@ sub organize {
 
         my $use_it = 1;
         if (exists $photos->{$key}) {
-          if ($photos->{$key}{md5} eq $photo->{md5}) {
-            say "Found an exact duplicate, ignoring it ..." if $opt_verbose;
-            $use_it = 0;
-          } else {
-            $use_it = length($photo->{exif}) > length($photos->{$key}{exif});
-            my $name = $use_it ? $photo->{source} : $photos->{$key}{source};
-            say "Found a partial duplicate, using '$name' for its larger EXIF." if $opt_verbose;
-          }
+          $use_it = length($photo->{exif}) > length($photos->{$key}{exif});
+          my $name = $use_it ? $photo->{source} : $photos->{$key}{source};
+          say "NOTICE: Found a partial duplicate, using '$name' for its larger EXIF." if $opt_verbose;
+        }
+
+        unless (-e $photo->{source}) {
+          say "WARNING: Item '$photo->{source}' no longer exists, ignoring it!";
+          $use_it = 0;
         }
 
         if ( $use_it ) { $photos->{$key} = $photo; }
       }
 
       my $total = scalar(keys %$photos);
-      say "Found '$total' unique items ...";
+      say "Organizing '$total' unique items ...";
 
       if ($total) {
         for my $photo (values %$photos) {
@@ -277,7 +281,7 @@ GetOptions (
 
 load_cfg($opt_config) if $opt_config;
 
-$dbh = DBI->connect("dbi:SQLite:dbname=$config->{db}", "", "", {RaiseError => 1}) or die $DBI::errstr;
+$dbh = DBI->connect("dbi:SQLite:dbname=$config->{db}", "", "", {PrintError => 0}) or die $DBI::errstr;
 
 if ($opt_setup)    { setup_db(); }
 if ($opt_analyze)  { find( \&analyze, @{$config->{dirs}{src}} ); }
@@ -287,6 +291,6 @@ unless ($opt_setup || $opt_analyze || $opt_organize) { say "Nothing to do ..."; 
 
 __DATA__
 DROP TABLE IF EXISTS photos;
-CREATE TABLE photos (id INTEGER PRIMARY KEY AUTOINCREMENT, md5 VARCHAR(50), hash VARCHAR(50), exif BLOB, date BLOB, source VARCHAR(255), destination VARCHAR(255));
+CREATE TABLE photos (md5 VARCHAR(50) PRIMARY KEY, hash VARCHAR(50), exif BLOB, date BLOB, source VARCHAR(255), destination VARCHAR(255));
 CREATE INDEX IDX_MD5  ON photos (md5);
 CREATE INDEX IDX_HASH ON photos (hash);
