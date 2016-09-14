@@ -12,6 +12,7 @@ use File::Slurp;
 use File::Basename;
 use File::Copy::Recursive 'fcopy';
 use Getopt::Long;
+use Time::Local;
 use List::Util 'max';
 
 use Image::Hash;
@@ -68,16 +69,59 @@ sub image_info {
 
   my $image = read_file($file, binmode => ':raw' );
 
+  # camera used
+  $exif->{Camera} = '';
+  if ($exif->{Make} || $exif->{Model}) {
+    if ($exif->{Model} =~ /$exif->{Make}/i) {
+      $exif->{Camera} = $exif->{Model};
+    } else {
+      $exif->{Camera} = "$exif->{Make} $exif->{Model}";
+    }
+    $exif->{Camera} =~ s/^\s//g;
+    $exif->{Camera} =~ s/\s$//g;
+    $exif->{Camera} =~ s/\s/-/g;
+  }
+
   # file hash
   my $md5 = Digest::MD5->new->add($image)->hexdigest;
 
-  # image hash
   my $hash = '';
-  if ($exif->{MIMEType} =~ /image/i) {
+  if ($exif->{MIMEType} =~ /image/i) { # mostly ignore videos
+
+    # image hash
     eval {
       my $iHash = Image::Hash->new($image);
       $hash = $iHash->phash();
     }; say "ERROR: $@" if $@;
+
+    # custom rendering options for iPhone:
+    #  4 : original image
+    #  3 : HDR image
+    #  6 : panorama image
+    if (($exif->{Camera} =~ /Apple/i) && $exif->{CustomRendered} && ($exif->{CustomRendered} =~ /(\d+)/)) {
+      my $render_v = $1;
+      $exif->{HDR}      = 1 if ($render_v == 3);
+      $exif->{Panorama} = 1 if ($render_v == 6);
+    }
+
+    # panorama double check
+    my $min_pano_ratio = 16 / 9;
+    if (($exif->{ImageWidth}) && ($exif->{ImageHeight})) {
+      my $ratio = max(
+        ($exif->{ImageWidth}  / $exif->{ImageHeight}),
+        ($exif->{ImageHeight} / $exif->{ImageWidth}),
+      );
+      $exif->{Panorama} = 1 if ($ratio > $min_pano_ratio);
+    }
+
+    # custom fields (subject to change...)
+    if ($exif->{Software} && $exif->{Software} =~ /instagram/i) {
+      $exif->{Instagram} = 1;
+    }
+    if (($exif->{FileName}    && $exif->{FileName}    =~ /screen\s*shot/i) ||
+        ($exif->{UserComment} && $exif->{UserComment} =~ /screen\s*shot/i)) {
+      $exif->{Screenshot} = 1;
+    }
   }
 
   $hash = $md5 unless $hash;
@@ -89,53 +133,20 @@ sub image_info {
   my $md   = $exif->{ModifyDate}     || '';
   for my $string (($f_md, $file, $md)) {
     if ($string =~ /(\d+)[-:_\.]+(\d+)[-:_\.]+(\d+)[-:_\.\s]+(\d+)[-:_\.]+(\d+)[-:_\.]*(\d*)/i) {
-      $date = {
-        year => $1,
-        mon  => $2,
-        day  => $3,
-        hour => $4,
-        min  => $5,
-        sec  => $6,
-      };
+      eval { timelocal( $6, $5, $4, $3, $2, $1 ) };
+
+      unless ( $@ ) {
+        $date = {
+          year => $1,
+          mon  => $2,
+          day  => $3,
+          hour => $4,
+          min  => $5,
+          sec  => $6,
+        };
+        $date->{sec} = '00' unless $date->{sec};
+      }
     }
-  }
-
-  # camera used
-  $exif->{Camera} = '';
-  if ($exif->{Make} || $exif->{Model}) {
-    $exif->{Camera} = "$exif->{Make} $exif->{Model}";
-    $exif->{Camera} =~ s/^\s//g;
-    $exif->{Camera} =~ s/\s$//g;
-    $exif->{Camera} =~ s/\s/-/g;
-  }
-
-  # custom rendering options for iPhone:
-  #  4 : original image
-  #  3 : HDR image
-  #  6 : panorama image
-  if (($exif->{Camera} =~ /Apple/i) && $exif->{CustomRendered} && ($exif->{CustomRendered} =~ /(\d+)/)) {
-    my $render_v = $1;
-    $exif->{HDR}      = 1 if ($render_v == 3);
-    $exif->{Panorama} = 1 if ($render_v == 6);
-  }
-
-  # panorama double check
-  my $min_pano_ratio = 16 / 9;
-  if (($exif->{ImageWidth}) && ($exif->{ImageHeight})) {
-    my $ratio = max(
-      ($exif->{ImageWidth}  / $exif->{ImageHeight}),
-      ($exif->{ImageHeight} / $exif->{ImageWidth}),
-    );
-    $exif->{Panorama} = 1 if ($ratio > $min_pano_ratio);
-  }
-
-  # custom fields (subject to change...)
-  if ($exif->{Software} && $exif->{Software} =~ /instagram/i) {
-    $exif->{Instagram} = 1;
-  }
-  if (($exif->{FileName}    && $exif->{FileName}    =~ /screen\s*shot/i) ||
-      ($exif->{UserComment} && $exif->{UserComment} =~ /screen\s*shot/i)) {
-    $exif->{Screenshot} = 1;
   }
 
   return {
