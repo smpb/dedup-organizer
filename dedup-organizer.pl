@@ -33,7 +33,9 @@ my $config = {
   dirs => {
     src => [ './imgs' ],
     dst => './sorted',
-  }
+  },
+  apps => [ qw/instagram snapseed moldiv hellolab camera+ photosynth squaready VSCOcam/ ],
+  tags => [ qw/PreviewImage PhotoshopThumbnail ThumbnailImage RedTRC BlueTRC GreenTRC/ ],
 };
 
 # functions
@@ -66,7 +68,7 @@ sub image_info {
   return unless $exif->{FileType};
 
   # binary data we don't need
-  for my $tag (qw/ThumbnailImage RedTRC BlueTRC GreenTRC/) {
+  for my $tag (@{$config->{tags}}) {
     delete $exif->{$tag};
   }
 
@@ -75,7 +77,9 @@ sub image_info {
   # camera used
   $exif->{Camera} = '';
   if ($exif->{Make} || $exif->{Model}) {
-    if ($exif->{Model} =~ /$exif->{Make}/i) {
+    my @make = split m{[\/\\\-:_\.\s]}, $exif->{Make};
+    my $m_pat = join('|', map { quotemeta $_ } @make);
+    if ($exif->{Model} =~ /$m_pat/i) {
       $exif->{Camera} = $exif->{Model};
     } else {
       $exif->{Camera} = "$exif->{Make} $exif->{Model}";
@@ -118,11 +122,20 @@ sub image_info {
     }
 
     # custom fields (subject to change...)
-    if ($exif->{Software} && $exif->{Software} =~ /instagram/i) {
-      $exif->{App} = $exif->{Software};
-      $exif->{App} =~ s/^\s//g;
-      $exif->{App} =~ s/\s$//g;
-      $exif->{App} =~ s/\s/-/g;
+    my $app;
+    if ($exif->{Software}) {
+      $app = $exif->{Software};
+      $app =~ s/[\(\)\[\]\-\d\.]+//g;
+      $app =~ s/\s+/ /g;
+      $app =~ s/^\s//g;
+      $app =~ s/\s$//g;
+      $app =~ s/\s/-/g;
+
+      my $s_pat = join('|', map { quotemeta $_ } @{$config->{apps}});
+
+      if ($app && $app =~ /$s_pat/i) {
+        $exif->{App} = $app;
+      }
     }
     if (($exif->{FileName}    && $exif->{FileName}    =~ /captura\s*de\s*ecr/i) ||
         ($exif->{FileName}    && $exif->{FileName}    =~ /screen\s*shot/i)      ||
@@ -140,7 +153,9 @@ sub image_info {
   my $md   = $exif->{ModifyDate}     || '';
   for my $string (($f_md, $file, $md)) {
     if ($string =~ /(\d+)[-:_\.]+(\d+)[-:_\.]+(\d+)[-:_\.\s]+(\d+)[-:_\.]+(\d+)[-:_\.]*(\d*)/i) {
-      eval { timelocal( $6, $5, $4, $3, $2, $1 ) };
+      eval { timelocal( $6+0, $5+0, $4+0, $3+0, $2-1, $1+0 ) };
+
+      if ($@ && $opt_verbose) { say "NOTICE: Found invalid date '$string' on '$file' ..."; }
 
       unless ( $@ ) {
         $date = {
