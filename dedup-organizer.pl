@@ -34,8 +34,8 @@ my $config = {
     src => [ './imgs' ],
     dst => './sorted',
   },
-  apps => [ qw/instagram snapseed moldiv hellolab camera+ photosynth squaready VSCOcam/ ],
-  tags => [ qw/PreviewImage PhotoshopThumbnail ThumbnailImage RedTRC BlueTRC GreenTRC/ ],
+  apps   => [ qw/Android Instagram Snapseed Moldiv Hellolab Camera+ Photosynth Squaready VSCOcam FxCam/ ],
+  binary => [ qw/PreviewImage PhotoshopThumbnail ThumbnailImage RedTRC BlueTRC GreenTRC/ ],
 };
 
 # functions
@@ -55,6 +55,7 @@ sub load_cfg {
 
 sub setup_db {
   say "Setting up database file ...";
+
   while (my $sql = <DATA>) {
     print $sql if $opt_verbose;
     $dbh->do($sql);
@@ -68,7 +69,7 @@ sub image_info {
   return unless $exif->{FileType};
 
   # binary data we don't need
-  for my $tag (@{$config->{tags}}) {
+  for my $tag (@{$config->{binary}}) {
     delete $exif->{$tag};
   }
 
@@ -123,6 +124,10 @@ sub image_info {
 
     # custom fields (subject to change...)
     my $app;
+    my $s_pat = join('|', map { quotemeta $_ } @{$config->{apps}});
+
+    if ($file =~ /($s_pat)/) { $exif->{App} = $1; }
+
     if ($exif->{Software}) {
       $app = $exif->{Software};
       $app =~ s/[\(\)\[\]\-\d\.]+//g;
@@ -130,8 +135,6 @@ sub image_info {
       $app =~ s/^\s//g;
       $app =~ s/\s$//g;
       $app =~ s/\s/-/g;
-
-      my $s_pat = join('|', map { quotemeta $_ } @{$config->{apps}});
 
       if ($app && $app =~ /$s_pat/i) {
         $exif->{App} = $app;
@@ -199,12 +202,16 @@ sub analyze {
     my($filename, $dirs, $suffix) = fileparse( $file, qr/\.[^.]*/ );
 
     my $name .= join('-', ($info->{date}{year}, $info->{date}{mon}, $info->{date}{day})) . '_';
-    $name    .= join('.', ($info->{date}{hour}, $info->{date}{min}, $info->{date}{sec}));
-    $name    .= $info->{exif}{HDR}      ? '_HDR'        : '';
-    $name    .= $info->{exif}{Panorama} ? '_Panorama'   : '';
-    $name    .= $info->{exif}{App}      ? '_' . $info->{exif}{App}    : '';
-    $name    .= $info->{exif}{Camera}   ? '_' . $info->{exif}{Camera} : '';
-    $name    .= $suffix;
+       $name .= join('.', ($info->{date}{hour}, $info->{date}{min}, $info->{date}{sec}));
+       $name .= $info->{exif}{App}      ? '_' . $info->{exif}{App}    : '';
+       $name .= $info->{exif}{Camera}   ? '_' . $info->{exif}{Camera} : '';
+       $name .= $info->{exif}{HDR}      ? '_HDR'        : '';
+       $name .= $info->{exif}{Panorama} ? '_Panorama'   : '';
+       $name .= lc $suffix;
+
+    # final name sanitization, just to be safe
+    my $cleaner = qr{\<|\>|\:|\"|\'|\/|\\|\||\?|\*};
+    $name =~ s/$cleaner/-/g;
 
     my $dst = join('/',
       ($info->{date}{year}, $info->{date}{mon}, $info->{date}{day}, $name)
