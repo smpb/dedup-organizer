@@ -65,7 +65,10 @@ sub image_info {
   my $exif = ImageInfo($file);
   return unless $exif->{FileType};
 
-  delete $exif->{ThumbnailImage}; # binary data I don't need
+  # binary data we don't need
+  for my $tag (qw/ThumbnailImage RedTRC BlueTRC GreenTRC/) {
+    delete $exif->{$tag};
+  }
 
   my $image = read_file($file, binmode => ':raw' );
 
@@ -116,11 +119,15 @@ sub image_info {
 
     # custom fields (subject to change...)
     if ($exif->{Software} && $exif->{Software} =~ /instagram/i) {
-      $exif->{Instagram} = 1;
+      $exif->{App} = $exif->{Software};
+      $exif->{App} =~ s/^\s//g;
+      $exif->{App} =~ s/\s$//g;
+      $exif->{App} =~ s/\s/-/g;
     }
-    if (($exif->{FileName}    && $exif->{FileName}    =~ /screen\s*shot/i) ||
+    if (($exif->{FileName}    && $exif->{FileName}    =~ /captura\s*de\s*ecr/i) ||
+        ($exif->{FileName}    && $exif->{FileName}    =~ /screen\s*shot/i)      ||
         ($exif->{UserComment} && $exif->{UserComment} =~ /screen\s*shot/i)) {
-      $exif->{Screenshot} = 1;
+      $exif->{App} = 'Screenshot';
     }
   }
 
@@ -178,11 +185,10 @@ sub analyze {
 
     my $name .= join('-', ($info->{date}{year}, $info->{date}{mon}, $info->{date}{day})) . '_';
     $name    .= join('.', ($info->{date}{hour}, $info->{date}{min}, $info->{date}{sec}));
-    $name    .= $info->{exif}{HDR}        ? '_HDR'        : '';
-    $name    .= $info->{exif}{Panorama}   ? '_Panorama'   : '';
-    $name    .= $info->{exif}{Instagram}  ? '_Instagram'  : '';
-    $name    .= $info->{exif}{Screenshot} ? '_Screenshot' : '';
-    $name    .= $info->{exif}{Camera}     ? '_' . $info->{exif}{Camera} : '';
+    $name    .= $info->{exif}{HDR}      ? '_HDR'        : '';
+    $name    .= $info->{exif}{Panorama} ? '_Panorama'   : '';
+    $name    .= $info->{exif}{App}      ? '_' . $info->{exif}{App}    : '';
+    $name    .= $info->{exif}{Camera}   ? '_' . $info->{exif}{Camera} : '';
     $name    .= $suffix;
 
     my $dst = join('/',
