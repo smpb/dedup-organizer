@@ -77,13 +77,15 @@ sub image_info {
 
   # camera used
   $exif->{Camera} = '';
-  if ($exif->{Make} || $exif->{Model}) {
-    my @make = split m{[\/\\\-:_\.\s]}, $exif->{Make};
-    my $m_pat = join('|', map { quotemeta $_ } @make);
-    if ($exif->{Model} =~ /$m_pat/i) {
-      $exif->{Camera} = $exif->{Model};
-    } else {
-      $exif->{Camera} = "$exif->{Make} $exif->{Model}";
+  if ($exif->{Model}) {
+    $exif->{Camera} = $exif->{Model};
+    if ($exif->{Make}) {
+      my @make = split m{[\/\\\-:_\.\s]}, $exif->{Make};
+      my $m_pat = join('|', map { quotemeta $_ } @make);
+
+      if ($exif->{Model} !~ /$m_pat/i) {
+        $exif->{Camera} = "$exif->{Make} $exif->{Model}";
+      }
     }
     $exif->{Camera} =~ s/^\s//g;
     $exif->{Camera} =~ s/\s$//g;
@@ -156,7 +158,7 @@ sub image_info {
   my $md   = $exif->{ModifyDate}     || '';
   for my $string (($f_md, $file, $md)) {
     if ($string =~ /(\d+)[-:_\.]+(\d+)[-:_\.]+(\d+)[-:_\.\s]+(\d+)[-:_\.]+(\d+)[-:_\.]*(\d*)/i) {
-      eval { timelocal( $6+0, $5+0, $4+0, $3+0, $2-1, $1+0 ) };
+      eval { my $sec = $6 || 0; timelocal( $sec+0, $5+0, $4+0, $3+0, $2-1, $1+0 ) };
 
       if ($@ && $opt_verbose) { say "NOTICE: Found invalid date '$string' on '$file' ..."; }
 
