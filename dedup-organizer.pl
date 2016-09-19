@@ -63,6 +63,25 @@ sub setup_db {
   }
 }
 
+sub is_duplicate {
+  my $file   = shift;
+  my $is_dup = 0;
+
+  # file hash
+  my $image = read_file($file, binmode => ':raw' );
+  my $md5 = Digest::MD5->new->add($image)->hexdigest;
+
+  my $sth = $dbh->prepare("SELECT source FROM photos WHERE md5=?");
+  my $res = $sth->execute($md5);
+
+  if ( $res ) {
+    my ($source) = $sth->fetchrow_array();
+    if ($source && (-e $source)) { $is_dup = 1 }
+  }
+
+  return $is_dup;
+}
+
 sub image_info {
   my $file = shift;
 
@@ -190,14 +209,18 @@ sub analyze {
   my $dir  = $File::Find::dir;
   my $src  = $File::Find::name;
 
-  state $current_dir    = '';
-  state $last_insert_id = 0;
+  state $current_dir = '';
 
-  return if ($file eq '.' or $file eq '..');
+  return if ((-d $file) or (-l $file));
 
   if ($current_dir ne $dir) {
     $current_dir = $dir;
     say "Analysing directory '$current_dir' ...";
+  }
+
+  if ( is_duplicate($file) ) {
+    say "File '$src' is a duplicate, no data stored ...";
+    return;
   }
 
   my $info = image_info( $file );
@@ -224,7 +247,7 @@ sub analyze {
     my $data_exif = nfreeze($info->{exif});
     my $data_date = nfreeze($info->{date});
 
-    my $stmt = "INSERT OR IGNORE INTO photos (md5, hash, exif, date, source, destination) VALUES (?,?,?,?,?,?)";
+    my $stmt = "INSERT OR REPLACE INTO photos (md5, hash, exif, date, source, destination) VALUES (?,?,?,?,?,?)";
     my $sth  = $dbh->prepare($stmt);
     my $res  = $sth->execute(
       $info->{md5},
@@ -236,19 +259,11 @@ sub analyze {
     );
 
     if ( $res ) {
-      my $insert_id = $dbh->last_insert_id("","","","");
-
-      if ($insert_id && ($insert_id != $last_insert_id)) {
-        if ($opt_verbose) {
-          say "Stored : MD5 '$info->{md5}' | HASH '$info->{hash}' | EXIF '". length($data_exif)  ."' | '$src' -> '$dst'";
-        } else {
-          say "Stored info about '$src' ...";
-        }
+      if ($opt_verbose) {
+        say "Stored : MD5 '$info->{md5}' | HASH '$info->{hash}' | EXIF '". length($data_exif)  ."' | '$src' -> '$dst'";
       } else {
-        say "File '$src' is a duplicate, no data stored ...";
+        say "Stored info about '$src' ...";
       }
-
-      $last_insert_id = $insert_id;
     } else {
       say "ERROR: Unable to store info about '$src'; $DBI::errstr"
     }
@@ -338,7 +353,7 @@ load_cfg($opt_config) if $opt_config;
 $dbh = DBI->connect("dbi:SQLite:dbname=$config->{db}", "", "", {PrintError => 0}) or die $DBI::errstr;
 
 if ($opt_setup)    { setup_db(); }
-if ($opt_analyze)  { find( \&analyze, @{$config->{dirs}{src}} ); }
+if ($opt_analyze)  { find({ wanted => \&analyze, no_chdir => 1 }, @{$config->{dirs}{src}} ); }
 if ($opt_organize) { organize(); }
 
 unless ($opt_setup || $opt_analyze || $opt_organize) { say "Nothing to do ..."; } else { say "All done!"; }
