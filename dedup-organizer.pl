@@ -63,13 +63,20 @@ sub setup_db {
   }
 }
 
-sub is_duplicate {
-  my $file   = shift;
-  my $is_dup = 0;
+sub process_file {
+  my $path = shift;
+  my $file = {};
 
-  # file hash
-  my $image = read_file($file, binmode => ':raw' );
-  my $md5 = Digest::MD5->new->add($image)->hexdigest;
+  $file->{path} = $path;
+  $file->{data} = read_file($path, binmode => ':raw' );
+  $file->{md5}  = Digest::MD5->new->add($file->{data})->hexdigest;
+
+  return $file;
+}
+
+sub is_duplicate {
+  my $md5    = shift;
+  my $is_dup = 0;
 
   my $sth = $dbh->prepare("SELECT source FROM photos WHERE md5=?");
   my $res = $sth->execute($md5);
@@ -85,7 +92,7 @@ sub is_duplicate {
 sub image_info {
   my $file = shift;
 
-  my $exif = ImageInfo($file);
+  my $exif = ImageInfo($file->{path});
   return unless $exif->{FileType};
 
   # binary data we don't need
@@ -93,7 +100,8 @@ sub image_info {
     delete $exif->{$tag};
   }
 
-  my $image = read_file($file, binmode => ':raw' );
+  my $md5   = $file->{md5};
+  my $image = $file->{data};
 
   # camera used
   $exif->{Camera} = '';
@@ -111,9 +119,6 @@ sub image_info {
     $exif->{Camera} =~ s/\s$//g;
     $exif->{Camera} =~ s/\s/-/g;
   }
-
-  # file hash
-  my $md5 = Digest::MD5->new->add($image)->hexdigest;
 
   my $hash = '';
   if ($exif->{MIMEType} =~ /image/i) { # mostly ignore videos
@@ -205,20 +210,22 @@ sub image_info {
 }
 
 sub analyze {
-  my $file = $_;
+  my $src  = $_;
   my $dir  = $File::Find::dir;
-  my $src  = $File::Find::name;
+  my $name = $File::Find::name;
 
   state $current_dir = '';
 
-  return if ((-d $file) or (-l $file));
+  return if ((-d $name) or (-l $name));
 
   if ($current_dir ne $dir) {
     $current_dir = $dir;
     say "Analysing directory '$current_dir' ...";
   }
 
-  if ( is_duplicate($file) ) {
+  my $file = process_file( $src );
+
+  if ( is_duplicate($file->{md5}) ) {
     say "File '$src' is a duplicate, no data stored ...";
     return;
   }
@@ -226,7 +233,7 @@ sub analyze {
   my $info = image_info( $file );
 
   if ($info) {
-    my($filename, $dirs, $suffix) = fileparse( $file, qr/\.[^.]*/ );
+    my($filename, $dirs, $suffix) = fileparse( $name, qr/\.[^.]*/ );
 
     my $name .= join('-', ($info->{date}{year}, $info->{date}{mon}, $info->{date}{day})) . '_';
        $name .= join('.', ($info->{date}{hour}, $info->{date}{min}, $info->{date}{sec}));
