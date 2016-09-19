@@ -102,7 +102,7 @@ sub image_info {
     eval {
       my $iHash = Image::Hash->new($image);
       $hash = $iHash->phash();
-    }; say "ERROR: $@" if $@;
+    }; say "ERROR: Image hash failed for '$file', $@" if $@;
 
     # custom rendering options for iPhone:
     #  4 : original image
@@ -278,7 +278,7 @@ sub organize {
       say "Organizing '$total' unique items ...";
 
       if ($total) {
-        for my $photo (values %$photos) {
+        PHOTO: for my $photo (values %$photos) {
           my $src = $photo->{source};
           my $dst = join('/', ($config->{dirs}{dst}, $photo->{destination}));
           if (-e $dst) {
@@ -286,6 +286,13 @@ sub organize {
             my $new_dst = $dst;
 
             do {
+              my $ndst_img = read_file($new_dst, binmode => ':raw' );
+              my $ndst_md5 = Digest::MD5->new->add($ndst_img)->hexdigest;
+              if ($ndst_md5 eq $photo->{md5}) {
+                say "NOTICE: '$src' is an exact copy of '$new_dst', skipping it ...";
+                next PHOTO;
+              }
+
               my($filename, $dirs, $suffix) = fileparse( $dst, qr/\.[^.]*/ );
               $count++; $new_dst = $dirs . $filename . "_$count" . $suffix;
             } while (-e $new_dst);
