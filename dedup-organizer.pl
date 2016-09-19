@@ -10,7 +10,7 @@ use Storable qw/nfreeze thaw/;
 use File::Find;
 use File::Slurp;
 use File::Basename;
-use File::Copy::Recursive 'fcopy';
+use File::Copy::Recursive qw/fcopy fmove/;
 use Getopt::Long;
 use Time::Local;
 use List::Util 'max';
@@ -21,6 +21,7 @@ use Image::ExifTool 'ImageInfo';
 
 # global
 
+my $opt_move;
 my $opt_setup;
 my $opt_config;
 my $opt_verbose;
@@ -189,7 +190,8 @@ sub analyze {
   my $dir  = $File::Find::dir;
   my $src  = $File::Find::name;
 
-  state $current_dir = '';
+  state $current_dir    = '';
+  state $last_insert_id = 0;
 
   return if ($file eq '.' or $file eq '..');
 
@@ -222,7 +224,7 @@ sub analyze {
     my $data_exif = nfreeze($info->{exif});
     my $data_date = nfreeze($info->{date});
 
-    my $stmt = "INSERT OR REPLACE INTO photos (md5, hash, exif, date, source, destination) VALUES (?,?,?,?,?,?)";
+    my $stmt = "INSERT OR IGNORE INTO photos (md5, hash, exif, date, source, destination) VALUES (?,?,?,?,?,?)";
     my $sth  = $dbh->prepare($stmt);
     my $res  = $sth->execute(
       $info->{md5},
@@ -234,11 +236,19 @@ sub analyze {
     );
 
     if ( $res ) {
-      if ($opt_verbose) {
-        say "Stored : MD5 '$info->{md5}' | HASH '$info->{hash}' | EXIF '". length($data_exif)  ."' | '$src' -> '$dst'";
+      my $insert_id = $dbh->last_insert_id("","","","");
+
+      if ($insert_id && ($insert_id != $last_insert_id)) {
+        if ($opt_verbose) {
+          say "Stored : MD5 '$info->{md5}' | HASH '$info->{hash}' | EXIF '". length($data_exif)  ."' | '$src' -> '$dst'";
+        } else {
+          say "Stored info about '$src' ...";
+        }
       } else {
-        say "Stored info about '$src' ...";
+        say "File '$src' is a duplicate, no data stored ...";
       }
+
+      $last_insert_id = $insert_id;
     } else {
       say "ERROR: Unable to store info about '$src'; $DBI::errstr"
     }
@@ -299,8 +309,14 @@ sub organize {
 
             $dst = $new_dst;
           }
-          fcopy($src, $dst);
-          say "Created a copy of '$src' in '$dst'";
+
+          if ( $opt_move ) {
+            fmove($src, $dst);
+            say "Moved file '$src' into '$dst'.";
+          } else {
+            fcopy($src, $dst);
+            say "Created a copy of '$src' in '$dst'.";
+          }
         }
       }
     }
@@ -309,6 +325,7 @@ sub organize {
 # main
 
 GetOptions (
+  "move"      => \$opt_move,
   "setup"     => \$opt_setup,
   "config=s"  => \$opt_config,
   "verbose"   => \$opt_verbose,
