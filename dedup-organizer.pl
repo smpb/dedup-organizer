@@ -24,6 +24,7 @@ use Image::ExifTool 'ImageInfo';
 my $opt_move;
 my $opt_setup;
 my $opt_config;
+my $opt_dry_run;
 my $opt_verbose;
 my $opt_analyze;
 my $opt_organize;
@@ -339,11 +340,12 @@ sub organize {
             $dst = $new_dst;
           }
 
+          print "DRY RUN: " if $opt_dry_run;
           if ( $opt_move ) {
-            fmove($src, $dst);
-            say "Moved file '$src' into '$dst'.";
+            fmove($src, $dst) unless $opt_dry_run;
+            say "Moved file '$src' to '$dst'.";
           } else {
-            fcopy($src, $dst);
+            fcopy($src, $dst) unless $opt_dry_run;
             say "Created a copy of '$src' in '$dst'.";
           }
         }
@@ -357,6 +359,7 @@ GetOptions (
   "move"      => \$opt_move,
   "setup"     => \$opt_setup,
   "config=s"  => \$opt_config,
+  "dry-run"   => \$opt_dry_run,
   "verbose"   => \$opt_verbose,
   "analyze"   => \$opt_analyze,
   "organize"  => \$opt_organize

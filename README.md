@@ -16,9 +16,9 @@ Simple image file deduplication (and organizer) tool, through MD5 and Perceptual
 
   1. `perl dedup-organizer.pl --setup    [--verbose]`
   2. `perl dedup-organizer.pl --analize  [--verbose]`
-  3. `perl dedup-organizer.pl --organize [--verbose] [--move]`
+  3. `perl dedup-organizer.pl --organize [--verbose] [--move] [--dry-run]`
 
 or just...
 
-  - `perl dedup-organizer.pl --setup --analyze --organize [--verbose] [--move]`
+  - `perl dedup-organizer.pl --setup --analyze --organize [--verbose] [--move] [--dry-run]`
 
