@@ -36,7 +36,7 @@ my $config = {
     src => [ './imgs' ],
     dst => './sorted',
   },
-  apps   => [ qw/Android Instagram Snapseed Moldiv Hellolab Camera+ Photosynth Squaready VSCOcam FxCam Voice\ Memo/ ],
+  apps   => [ qw/Android Instagram Snapseed Moldiv Hellolab Camera+ Photosynth Squaready VSCOcam FxCam/, 'Voice Memo' ],
   binary => [ qw/PreviewImage PhotoshopThumbnail ThumbnailImage RedTRC BlueTRC GreenTRC/ ],
 };
 
@@ -66,9 +66,15 @@ sub setup_db {
 
 sub process_file {
   my $path = shift;
-  my $file = {};
+  my($filename, $dirs, $suffix) = fileparse( $path, qr/\.[^.]*/ );
 
-  $file->{path} = $path;
+  my $file = {
+    path     => $path,
+    filename => $filename,
+    dirs     => $dirs,
+    suffix   => $suffix,
+  };
+
   $file->{data} = read_file($path, binmode => ':raw' );
   $file->{md5}  = Digest::MD5->new->add($file->{data})->hexdigest;
 
@@ -76,15 +82,26 @@ sub process_file {
 }
 
 sub is_duplicate {
-  my $md5    = shift;
+  my $item   = shift;
   my $is_dup = 0;
 
-  my $sth = $dbh->prepare("SELECT source FROM photos WHERE md5=?");
-  my $res = $sth->execute($md5);
+  my $sql;
+  my $param;
+
+  if ($item->{md5}) {
+    $sql   = 'SELECT source FROM photos WHERE md5=?';
+    $param = $item->{md5};
+  } elsif ($item->{hash}) {
+    $sql   = 'SELECT source FROM photos WHERE hash=?';
+    $param = $item->{hash};
+  } else { return }
+
+  my $sth = $dbh->prepare($sql);
+  my $res = $sth->execute($param);
 
   if ( $res ) {
     my ($source) = $sth->fetchrow_array();
-    if ($source && (-e $source)) { $is_dup = 1 }
+    if ($source && (-e $source)) { $is_dup = $source }
   }
 
   return $is_dup;
@@ -125,7 +142,13 @@ sub image_info {
   if ($exif->{MIMEType} =~ /image/i) { # image hashing doesn't work on videos
     eval { # image hash
       my $iHash = Image::Hash->new($image);
-      $hash = $iHash->phash();
+      $hash  = $iHash->ahash();
+      $hash .= $iHash->dhash();
+      $hash .= $iHash->phash();
+      $hash .= $iHash->greytones();
+      if (my $original = is_duplicate({ hash => $hash })) {
+        say "WARNING: Files '$file->{path}' '$original' have the same image hash and a clash WILL occur when organizing!";
+      }
     }; say "ERROR: Image hash failed for '$file->{path}', $@" if $@;
   }
 
@@ -153,7 +176,7 @@ sub image_info {
   my $app;
   my $s_pat = join('|', map { quotemeta $_ } @{$config->{apps}});
 
-  if ($file->{path} =~ /($s_pat)/i) {
+  if ($file->{filename} =~ /($s_pat)/i) {
     $exif->{App} = $1;
     $exif->{App} =~ s/[\(\)\[\]\-\d\.]+//g;
     $exif->{App} =~ s/\s+/ /g;
@@ -233,23 +256,21 @@ sub analyze {
 
   my $file = process_file( $src );
 
-  if ( is_duplicate($file->{md5}) ) {
-    say "File '$src' is a duplicate, no data stored ...";
+  if ( my $original = is_duplicate({ md5 => $file->{md5} }) ) {
+    say "File '$src' is a duplicate of '$original', no data stored ...";
     return;
   }
 
   my $info = image_info( $file );
 
   if ($info) {
-    my($filename, $dirs, $suffix) = fileparse( $name, qr/\.[^.]*/ );
-
     my $name .= join('-', ($info->{date}{year}, $info->{date}{mon}, $info->{date}{day})) . '_';
        $name .= join('.', ($info->{date}{hour}, $info->{date}{min}, $info->{date}{sec}));
        $name .= $info->{exif}{Camera}   ? '_' . $info->{exif}{Camera} : '';
        $name .= $info->{exif}{App}      ? '_' . $info->{exif}{App}    : '';
        $name .= $info->{exif}{HDR}      ? '_HDR'        : '';
        $name .= $info->{exif}{Panorama} ? '_Panorama'   : '';
-       $name .= lc $suffix;
+       $name .= lc $file->{suffix};
 
     # final name sanitization, just to be safe
     my $cleaner = qr{\<|\>|\:|\"|\'|\/|\\|\||\?|\*};
@@ -303,7 +324,7 @@ sub organize {
         if (exists $photos->{$key}) {
           $use_it = length($photo->{exif}) > length($photos->{$key}{exif});
           my $name = $use_it ? $photo->{source} : $photos->{$key}{source};
-          say "NOTICE: Found a partial duplicate, using '$name' for its larger EXIF." if $opt_verbose;
+          say "NOTICE: Found a partial duplicate, using '$name' instead of '$photos->{$key}{source}' for its larger EXIF." if $opt_verbose;
         }
 
         unless (-e $photo->{source}) {
@@ -377,6 +398,6 @@ unless ($opt_setup || $opt_analyze || $opt_organize) { say "Nothing to do ..."; 
 
 __DATA__
 DROP TABLE IF EXISTS photos;
-CREATE TABLE photos (md5 VARCHAR(50) PRIMARY KEY, hash VARCHAR(50), exif BLOB, date BLOB, source VARCHAR(255), destination VARCHAR(255));
+CREATE TABLE photos (md5 VARCHAR(50) PRIMARY KEY, hash VARCHAR(100), exif BLOB, date BLOB, source VARCHAR(255), destination VARCHAR(255));
 CREATE INDEX IDX_MD5  ON photos (md5);
 CREATE INDEX IDX_HASH ON photos (hash);
