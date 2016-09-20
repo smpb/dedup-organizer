@@ -35,7 +35,7 @@ my $config = {
     src => [ './imgs' ],
     dst => './sorted',
   },
-  apps   => [ qw/Android Instagram Snapseed Moldiv Hellolab Camera+ Photosynth Squaready VSCOcam FxCam/ ],
+  apps   => [ qw/Android Instagram Snapseed Moldiv Hellolab Camera+ Photosynth Squaready VSCOcam FxCam Voice\ Memo/ ],
   binary => [ qw/PreviewImage PhotoshopThumbnail ThumbnailImage RedTRC BlueTRC GreenTRC/ ],
 };
 
@@ -121,57 +121,64 @@ sub image_info {
   }
 
   my $hash = '';
-  if ($exif->{MIMEType} =~ /image/i) { # mostly ignore videos
-
-    # image hash
-    eval {
+  if ($exif->{MIMEType} =~ /image/i) { # image hashing doesn't work on videos
+    eval { # image hash
       my $iHash = Image::Hash->new($image);
       $hash = $iHash->phash();
-    }; say "ERROR: Image hash failed for '$file', $@" if $@;
+    }; say "ERROR: Image hash failed for '$file->{path}', $@" if $@;
+  }
 
-    # custom rendering options for iPhone:
-    #  4 : original image
-    #  3 : HDR image
-    #  6 : panorama image
-    if (($exif->{Camera} =~ /Apple/i) && $exif->{CustomRendered} && ($exif->{CustomRendered} =~ /(\d+)/)) {
-      my $render_v = $1;
-      $exif->{HDR}      = 1 if ($render_v == 3);
-      $exif->{Panorama} = 1 if ($render_v == 6);
-    }
+  # custom rendering options for iPhone:
+  #  4 : original image
+  #  3 : HDR image
+  #  6 : panorama image
+  if (($exif->{Camera} =~ /Apple/i) && $exif->{CustomRendered} && ($exif->{CustomRendered} =~ /(\d+)/)) {
+    my $render_v = $1;
+    $exif->{HDR}      = 1 if ($render_v == 3);
+    $exif->{Panorama} = 1 if ($render_v == 6);
+  }
 
-    # panorama double check
-    my $min_pano_ratio = 16 / 9;
-    if (($exif->{ImageWidth}) && ($exif->{ImageHeight})) {
-      my $ratio = max(
-        ($exif->{ImageWidth}  / $exif->{ImageHeight}),
-        ($exif->{ImageHeight} / $exif->{ImageWidth}),
-      );
-      $exif->{Panorama} = 1 if ($ratio > $min_pano_ratio);
-    }
+  # panorama double check
+  my $min_pano_ratio = 16 / 9;
+  if (($exif->{ImageWidth}) && ($exif->{ImageHeight})) {
+    my $ratio = max(
+      ($exif->{ImageWidth}  / $exif->{ImageHeight}),
+      ($exif->{ImageHeight} / $exif->{ImageWidth}),
+    );
+    $exif->{Panorama} = 1 if ($ratio > $min_pano_ratio);
+  }
 
-    # custom fields (subject to change...)
-    my $app;
-    my $s_pat = join('|', map { quotemeta $_ } @{$config->{apps}});
+  # custom fields (subject to change...)
+  my $app;
+  my $s_pat = join('|', map { quotemeta $_ } @{$config->{apps}});
 
-    if ($file =~ /($s_pat)/) { $exif->{App} = $1; }
+  if ($file->{path} =~ /($s_pat)/i) {
+    $exif->{App} = $1;
+    $exif->{App} =~ s/[\(\)\[\]\-\d\.]+//g;
+    $exif->{App} =~ s/\s+/ /g;
+    $exif->{App} =~ s/^\s|\s$//g;
+    $exif->{App} =~ s/\s/-/g;
+  }
 
-    if ($exif->{Software}) {
-      $app = $exif->{Software};
-      $app =~ s/[\(\)\[\]\-\d\.]+//g;
-      $app =~ s/\s+/ /g;
-      $app =~ s/^\s//g;
-      $app =~ s/\s$//g;
-      $app =~ s/\s/-/g;
+  if ($exif->{Software}) {
+    $app = $exif->{Software};
+    $app =~ s/[\(\)\[\]\-\d\.]+//g;
+    $app =~ s/\s+/ /g;
+    $app =~ s/^\s|\s$//g;
+    $app =~ s/\s/-/g;
 
-      if ($app && $app =~ /$s_pat/i) {
+    if ($app && $app =~ /$s_pat/i) {
+      if ($exif->{App} && ($exif->{App} !~ /$app/i)) {
+        $exif->{App} = $app.'_'.$exif->{App};
+      } else {
         $exif->{App} = $app;
       }
     }
-    if (($exif->{FileName}    && $exif->{FileName}    =~ /captura\s*de\s*ecr/i) ||
-        ($exif->{FileName}    && $exif->{FileName}    =~ /screen\s*shot/i)      ||
-        ($exif->{UserComment} && $exif->{UserComment} =~ /screen\s*shot/i)) {
-      $exif->{App} = 'Screenshot';
-    }
+  }
+  if (($exif->{FileName}    && $exif->{FileName}    =~ /captura\s*de\s*ecr/i) ||
+      ($exif->{FileName}    && $exif->{FileName}    =~ /screen\s*shot/i)      ||
+      ($exif->{UserComment} && $exif->{UserComment} =~ /screen\s*shot/i)) {
+    $exif->{App} = 'Screenshot';
   }
 
   $hash = $md5 unless $hash;
@@ -181,11 +188,11 @@ sub image_info {
 
   my $f_md = $exif->{FileModifyDate} || '';
   my $md   = $exif->{ModifyDate}     || '';
-  for my $string (($f_md, $file, $md)) {
+  for my $string (($f_md, $file->{path}, $md)) {
     if ($string =~ /(\d+)[-:_\.]+(\d+)[-:_\.]+(\d+)[-:_\.\s]+(\d+)[-:_\.]+(\d+)[-:_\.]*(\d*)/i) {
       eval { my $sec = $6 || 0; timelocal( $sec+0, $5+0, $4+0, $3+0, $2-1, $1+0 ) };
 
-      if ($@ && $opt_verbose) { say "NOTICE: Found invalid date '$string' on '$file' ..."; }
+      if ($@ && $opt_verbose) { say "NOTICE: Found invalid date '$string' on '$file->{path}' ..."; }
 
       unless ( $@ ) {
         $date = {
@@ -237,8 +244,8 @@ sub analyze {
 
     my $name .= join('-', ($info->{date}{year}, $info->{date}{mon}, $info->{date}{day})) . '_';
        $name .= join('.', ($info->{date}{hour}, $info->{date}{min}, $info->{date}{sec}));
-       $name .= $info->{exif}{App}      ? '_' . $info->{exif}{App}    : '';
        $name .= $info->{exif}{Camera}   ? '_' . $info->{exif}{Camera} : '';
+       $name .= $info->{exif}{App}      ? '_' . $info->{exif}{App}    : '';
        $name .= $info->{exif}{HDR}      ? '_HDR'        : '';
        $name .= $info->{exif}{Panorama} ? '_Panorama'   : '';
        $name .= lc $suffix;
