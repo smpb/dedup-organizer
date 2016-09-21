@@ -33,7 +33,10 @@ my $dbh;
 my $config = {
   db   => 'photos.db',
   dirs => {
-    src => [ './imgs' ],
+    src => [
+      './imgs',
+      './sorted',
+    ],
     dst => './sorted',
   },
   apps   => [ qw/Android Instagram Snapseed Moldiv Hellolab Camera+ Photosynth Squaready VSCOcam FxCam/, 'Voice Memo' ],
@@ -322,9 +325,15 @@ sub organize {
 
         my $use_it = 1;
         if (exists $photos->{$key}) {
-          $use_it = length($photo->{exif}) > length($photos->{$key}{exif});
-          my $name = $use_it ? $photo->{source} : $photos->{$key}{source};
-          say "NOTICE: Found a partial duplicate, using '$name' instead of '$photos->{$key}{source}' for its larger EXIF." if $opt_verbose;
+          if ($photo->{destination} ne $photos->{$key}{destination}) {
+            say "NOTICE: Found a partial duplicate, using both '$photo->{source}' ('$photo->{destination}') and '$photos->{$key}{source}' ('$photos->{$key}{destination}') because destinations are different." if $opt_verbose;
+            $key = $photo->{md5};
+            $use_it = 1;
+          } else {
+            $use_it = length($photo->{exif}) > length($photos->{$key}{exif});
+            my $name = $use_it ? $photo->{source} : $photos->{$key}{source};
+            say "NOTICE: Found a partial duplicate, using '$photo->{source}' instead of '$photos->{$key}{source}' for its larger EXIF." if $opt_verbose;
+          }
         }
 
         unless (-e $photo->{source}) {
@@ -336,7 +345,7 @@ sub organize {
       }
 
       my $total = scalar(keys %$photos);
-      say "Organizing '$total' unique items ...";
+      say "Found '$total' unique items ...";
 
       if ($total) {
         PHOTO: for my $photo (values %$photos) {
