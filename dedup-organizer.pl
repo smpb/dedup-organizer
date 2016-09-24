@@ -332,8 +332,18 @@ sub organize {
             $use_it = 1;
           } else {
             $use_it = length($photo->{exif}) > length($photos->{$key}{exif});
-            my $name = $use_it ? $photo->{source} : $photos->{$key}{source};
-            say "NOTICE: Found a partial duplicate, using '$photo->{source}' instead of '$photos->{$key}{source}' for its larger EXIF." if $opt_verbose;
+            if ($opt_verbose) {
+              my $new;
+              my $old;
+              if ($use_it) {
+                $new = $photo->{source};
+                $old = $photos->{$key}{source};
+              } else {
+                $new = $photos->{$key}{source};
+                $old = $photo->{source};
+              }
+              say "NOTICE: Found a partial duplicate, using '$new' instead of '$old' for its larger EXIF.";
+            }
           }
         }
 
