@@ -378,6 +378,14 @@ sub organize {
             fcopy($src, $dst) unless $opt_dry_run;
             say "Created a copy of '$src' in '$dst'.";
           }
+
+          # set file date
+          if ((!$opt_dry_run) && (-e $dst)) {
+            my $date  = thaw($photo->{date});
+            my $epoch = timelocal($date->{sec}, $date->{min}, $date->{hour}, $date->{day}, ($date->{mon} - 1), $date->{year});
+
+            utime($epoch, $epoch, $dst);
+          }
         }
       }
     }
