@@ -78,8 +78,9 @@ sub process_file {
     suffix   => $suffix,
   };
 
-  $file->{data} = read_file($path, binmode => ':raw' );
-  $file->{md5}  = Digest::MD5->new->add($file->{data})->hexdigest;
+  open FILE, "$path";
+  $file->{md5} = Digest::MD5->new->addfile(*FILE)->hexdigest;
+  close (FILE);
 
   return $file;
 }
@@ -121,8 +122,7 @@ sub image_info {
     delete $exif->{$tag};
   }
 
-  my $md5   = $file->{md5};
-  my $image = $file->{data};
+  my $md5 = $file->{md5};
 
   # camera used
   $exif->{Camera} = '';
@@ -142,7 +142,8 @@ sub image_info {
   }
 
   my $hash = '';
-  if ($exif->{MIMEType} =~ /image/i) { # image hashing doesn't work on videos
+  if ($exif->{MIMEType} =~ /image/i) { # image hashing
+    my $image = read_file($file->{path}, binmode => ':raw' );
     eval { # image hash
       my $iHash = Image::Hash->new($image);
       $hash  = $iHash->ahash();
