@@ -39,8 +39,9 @@ my $config = {
     ],
     dst => './sorted',
   },
-  apps   => [ qw/Android Instagram Snapseed Moldiv Hellolab Camera+ Photosynth Squaready VSCOcam FxCam/, 'Voice Memo' ],
-  binary => [ qw/PreviewImage PhotoshopThumbnail ThumbnailImage RedTRC BlueTRC GreenTRC/ ],
+  apps    => [ qw/Android Instagram Snapseed Moldiv Hellolab Camera+ Photosynth Squaready VSCOcam FxCam/, 'Voice Memo' ],
+  binary  => [ qw/PreviewImage PhotoshopThumbnail ThumbnailImage RedTRC BlueTRC GreenTRC/ ],
+  sidecar => [ qw/aae/ ],
 };
 
 # functions
@@ -71,11 +72,18 @@ sub process_file {
   my $path = shift;
   my($filename, $dirs, $suffix) = fileparse( $path, qr/\.[^.]*/ );
 
+  my $sidecar = 0;
+
+  for my $ext (@{$config->{sidecar}}) {
+    $sidecar = 1 if ($suffix =~ /$ext/i);
+  }
+
   my $file = {
     path     => $path,
     filename => $filename,
     dirs     => $dirs,
     suffix   => $suffix,
+    sidecar  => $sidecar,
   };
 
   open FILE, "$path";
@@ -142,7 +150,7 @@ sub image_info {
   }
 
   my $hash = '';
-  if ($exif->{MIMEType} =~ /image/i) { # image hashing
+  if (($exif->{FileType} =~ /jp/i) && $exif->{MIMEType} =~ /image/i) { # JPEG image hashing
     my $image = read_file($file->{path}, binmode => ':raw' );
     eval { # image hash
       my $iHash = Image::Hash->new($image);
@@ -250,6 +258,7 @@ sub analyze {
   my $name = $File::Find::name;
 
   state $current_dir = '';
+  state $sidecars = {};
 
   return if ((-d $name) or (-l $name));
 
@@ -259,6 +268,12 @@ sub analyze {
   }
 
   my $file = process_file( $src );
+
+  if ($file->{sidecar}) {
+    say "File '$src' is a sidecar, no data stored yet...";
+    $sidecars->{lc $src} = $file;
+    return
+  }
 
   if ( my $original = is_duplicate({ md5 => $file->{md5} }) ) {
     say "File '$src' is a duplicate of '$original', no data stored ...";
@@ -274,7 +289,6 @@ sub analyze {
        $name .= $info->{exif}{App}      ? '_' . $info->{exif}{App}    : '';
        $name .= $info->{exif}{HDR}      ? '_HDR'        : '';
        $name .= $info->{exif}{Panorama} ? '_Panorama'   : '';
-       $name .= lc $file->{suffix};
 
     # final name sanitization, just to be safe
     my $cleaner = qr{\<|\>|\:|\"|\'|\/|\\|\||\?|\*};
@@ -283,6 +297,7 @@ sub analyze {
     my $dst = join('/',
       ($info->{date}{year}, $info->{date}{mon}, $info->{date}{day}, $name)
     );
+    $dst .= lc $file->{suffix};
 
     my $data_exif = nfreeze($info->{exif});
     my $data_date = nfreeze($info->{date});
@@ -306,6 +321,39 @@ sub analyze {
       }
     } else {
       say "ERROR: Unable to store info about '$src'; $DBI::errstr"
+    }
+
+    # check for sidecar
+    for my $ext (@{$config->{sidecar}}) {
+      my $sd = lc( $file->{dirs} . $file->{filename} . ".$ext");
+
+      if ($sidecars->{$sd}) {
+        my $sd_dst = join('/',
+          ($info->{date}{year}, $info->{date}{mon}, $info->{date}{day}, $name)
+        );
+        $sd_dst .= lc $sidecars->{$sd}{suffix};
+
+        $stmt = "INSERT OR REPLACE INTO photos (md5, hash, exif, date, source, destination) VALUES (?,?,?,?,?,?)";
+        $sth  = $dbh->prepare($stmt);
+        $res  = $sth->execute(
+          $sidecars->{$sd}{md5},
+          $sidecars->{$sd}{hash},
+          '',
+          $data_date,
+          $sidecars->{$sd}{path},
+          $sd_dst,
+        );
+
+        if ( $res ) {
+          if ($opt_verbose) {
+            say "Stored : MD5 '$sidecars->{$sd}{md5}' | HASH '$sidecars->{$sd}{md5}' | '$sidecars->{$sd}{path}' -> '$sd_dst'";
+          } else {
+            say "Stored info about '$sidecars->{$sd}{path}' ...";
+          }
+        } else {
+          say "ERROR: Unable to store info about '$src'; $DBI::errstr"
+        }
+      }
     }
   }
 
@@ -360,6 +408,11 @@ sub organize {
 
       if ($total) {
         PHOTO: for my $photo (values %$photos) {
+          if ($photo->{source} =~ /$config->{dirs}{dst}/i) {
+            say "WARNING: Item '$photo->{source}' is already organized, ignoring it!";
+            next PHOTO;
+          }
+
           my $src = $photo->{source};
           my $dst = join('/', ($config->{dirs}{dst}, $photo->{destination}));
           if (-e $dst) {
