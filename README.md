@@ -23,9 +23,9 @@ or just...
 
 ## Non-Core Perl Dependencies
 
-  - DBI
-  - DBD::SQLite
-  - Image::Hash
-  - Image::ExifTool
-  - File::Copy::Recursive
+  - [DBI](https://metacpan.org/pod/DBI)
+  - [DBD::SQLite](https://metacpan.org/pod/DBD::SQLite)
+  - [Image::Hash](https://metacpan.org/pod/Image::Hash)
+  - [Image::ExifTool](https://metacpan.org/pod/Image::ExifTool)
+  - [File::Copy::Recursive](https://metacpan.org/pod/File::Copy::Recursive)
 
