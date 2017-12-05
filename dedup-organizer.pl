@@ -337,7 +337,7 @@ sub analyze {
         $sth  = $dbh->prepare($stmt);
         $res  = $sth->execute(
           $sidecars->{$sd}{md5},
-          $sidecars->{$sd}{hash},
+          $sidecars->{$sd}{md5},
           '',
           $data_date,
           $sidecars->{$sd}{path},
@@ -369,7 +369,7 @@ sub organize {
       say "Organizing stored information ...";
 
       while(my $photo = $sth->fetchrow_hashref()) {
-        my $key = $photo->{hash};
+        my $key = $photo->{hash} || $photo->{md5};
         say "Using key '$key' to identify the item '$photo->{source}'." if $opt_verbose;
 
         my $use_it = 1;
