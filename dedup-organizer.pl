@@ -3,6 +3,7 @@
 use v5.10;
 use strict;
 use warnings;
+use lib 'local/lib/perl5';
 
 use DBI;
 use Storable qw/nfreeze thaw/;

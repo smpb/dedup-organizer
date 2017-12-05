@@ -1,0 +1,12 @@
+requires 'DBI';
+requires 'Storable';
+requires 'File::Find';
+requires 'File::Slurp';
+requires 'File::Basename';
+requires 'File::Copy::Recursive';
+requires 'Getopt::Long';
+requires 'Time::Local';
+requires 'List::Util';
+requires 'Image::Hash';
+requires 'Digest::MD5';
+requires 'Image::ExifTool';
