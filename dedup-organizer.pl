@@ -35,8 +35,8 @@ my $config = {
   db   => 'photos.db',
   dirs => {
     src => [
-      './imgs',
       './sorted',
+      './imgs',
     ],
     dst => './sorted',
   },
@@ -44,6 +44,8 @@ my $config = {
   binary  => [ qw/PreviewImage PhotoshopThumbnail ThumbnailImage RedTRC BlueTRC GreenTRC/ ],
   sidecar => [ qw/aae/ ],
 };
+
+my $img_lib = (eval 'require Image::Magick') ? 'Image::Magick' : 'GD';
 
 # functions
 
@@ -151,10 +153,10 @@ sub image_info {
   }
 
   my $hash = '';
-  if (($exif->{FileType} =~ /jp/i) && $exif->{MIMEType} =~ /image/i) { # JPEG image hashing
+  if ($exif->{MIMEType} =~ /image/i) {
     my $image = read_file($file->{path}, binmode => ':raw' );
     eval { # image hash
-      my $iHash = Image::Hash->new($image);
+      my $iHash = Image::Hash->new($image, $img_lib);
       $hash  = $iHash->ahash();
       $hash .= $iHash->dhash();
       $hash .= $iHash->phash();
@@ -162,7 +164,7 @@ sub image_info {
       if (my $original = is_duplicate({ hash => $hash })) {
         say "WARNING: Files '$file->{path}' '$original' have the same image hash and a clash WILL occur when organizing!";
       }
-    }; say "ERROR: Image hash failed for '$file->{path}', $@" if $@;
+    }; say "WARNING: Image hash failed for '$file->{path}'" if $@;
   }
 
   # custom rendering options for iPhone:
