@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+# This script was taken (and adapted) from <https://gist.github.com/zmughal/8264712/>
+# See <http://perltricks.com/article/57/2014/1/1/Shazam-Use-Image-Magick-with-Perlbrew-in-minutes>
+
+
+TOP="$(pwd)/local"
+
+if [ -n "$1" ]; then
+    TOP=$1
+fi
+
+mkdir -p $TOP
+cd "$TOP"
+curl http://www.imagemagick.org/download/ImageMagick.tar.gz --output ImageMagick.tar.gz
+tar xzvf ImageMagick.tar.gz
+rm ImageMagick.tar.gz
+IMDIR=$(find . -d 1 -name 'ImageMagick-*' -exec basename {} \;)
+cd $IMDIR
+
+
+PERL_CORE=$(perl -e 'print grep { -d } map { "$_/CORE" } @INC')
+PERL_BIN=$(which perl)
+
+PERL_THREADS=$(perl -V | grep -c 'useithreads=define')
+
+THREAD_FLAG="--with-threads"
+
+if [ $PERL_THREADS = 0 ]; then
+    THREAD_FLAG="--without-threads"
+fi
+
+LDFLAGS=-L$PERL_CORE \
+    ./configure --prefix $TOP \
+    --with-perl=$PERL_BIN \
+    --enable-shared $THREAD_FLAG
+
+make install
+
+
+cd ..
+rm -rf $IMDIR
+
