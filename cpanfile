@@ -9,4 +9,4 @@ requires 'Time::Local';
 requires 'List::Util';
 requires 'Image::Hash';
 requires 'Digest::MD5';
-requires 'Image::ExifTool';
+requires 'Image::ExifTool', '11.01';
